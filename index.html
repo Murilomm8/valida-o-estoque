@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Validação de Estoque por Localização</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <header>
+        <h1>Validação de Estoque por Localização</h1>
+      </header>
+
+      <section class="card" id="import-section">
+        <h2>1) Importação da planilha</h2>
+        <div class="grid">
+          <label>
+            Operador
+            <input id="operator-name" type="text" placeholder="Nome do operador" />
+          </label>
+          <label>
+            Arquivo (.csv / .xlsx)
+            <input id="file-input" type="file" accept=".csv,.xlsx" />
+          </label>
+        </div>
+        <p class="hint">
+          Colunas esperadas: <strong>Localização</strong>, <strong>SKU</strong>, <strong>Produto</strong>,
+          <strong>Quantidade</strong> (ou similares, sem acentuação também funciona).
+        </p>
+        <button id="start-session" class="primary">Iniciar conferência</button>
+      </section>
+
+      <section class="card hidden" id="conference-section">
+        <h2>2) Conferência guiada</h2>
+        <div class="location-box" id="current-location">-</div>
+        <div class="progress" id="progress-text"></div>
+        <table>
+          <thead>
+            <tr>
+              <th>SKU</th>
+              <th>Produto</th>
+              <th>Qtd Esperada</th>
+              <th>Qtd Real</th>
+              <th>Não encontrado</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="items-body"></tbody>
+        </table>
+        <div class="actions">
+          <button id="confirm-next" class="primary">Confirmar e Próximo (Enter)</button>
+        </div>
+      </section>
+
+      <section class="card hidden" id="report-section">
+        <h2>3) Relatório final</h2>
+        <div id="report-summary" class="grid report"></div>
+        <h3>Divergências</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Localização</th>
+              <th>SKU</th>
+              <th>Esperado</th>
+              <th>Encontrado</th>
+              <th>Diferença</th>
+            </tr>
+          </thead>
+          <tbody id="divergence-body"></tbody>
+        </table>
+        <div class="actions">
+          <button id="export-csv">Exportar CSV</button>
+          <button id="export-xlsx">Exportar XLSX</button>
+          <button id="new-session">Nova sessão</button>
+        </div>
+      </section>
+    </main>
+
+    <script src="vendor/xlsx.full.min.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
