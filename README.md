@@ -19,6 +19,7 @@ Aplicação web local (offline) para conferência guiada de estoque por localiza
 - Sessão com operador, horário de início, progresso e timestamps por localização.
 - Registro de divergências (diferente / não encontrado).
 - Persistência no `localStorage`.
+- Linhas sem localização válida (ex.: títulos como "Expedição") são ignoradas automaticamente na importação.
 
 ## Colunas aceitas na importação
 

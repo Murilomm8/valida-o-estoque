@@ -35,22 +35,34 @@ function normalizeHeader(value) {
 }
 
 function parseLocation(rawValue) {
-  const cleaned = String(rawValue || '')
+  const normalized = String(rawValue || '')
     .replace(/\*/g, '')
+    .replace(/\\/g, '/')
     .replace(/\s+/g, ' ')
     .trim()
     .toUpperCase();
-  const match = cleaned.match(/^([A-Z]+)\s+(\d+)\.(\d+)$/);
+
+  const compact = normalized.replace(/\s+/g, '');
+  const directMatch = compact.match(/([A-Z]+)(\d+)\.(\d+)/);
+  const spacedMatch = normalized.match(/([A-Z]+)\s+(\d+)\.(\d+)/);
+  const match = directMatch || spacedMatch;
+
   if (!match) {
-    throw new Error(`Localização inválida: "${rawValue}"`);
+    return null;
   }
+
+  const longarina = match[1];
+  const altura = Number(match[2]);
+  const posicao = Number(match[3]);
+
   return {
-    raw: cleaned,
-    longarina: match[1],
-    altura: Number(match[2]),
-    posicao: Number(match[3])
+    raw: `${longarina} ${altura}.${posicao}`,
+    longarina,
+    altura,
+    posicao
   };
 }
+
 
 function compareLocation(a, b) {
   const l = a.longarina.localeCompare(b.longarina);
@@ -75,8 +87,15 @@ function persistState() {
 
 function groupRows(rows) {
   const locationMap = new Map();
+  let ignoredRows = 0;
+
   rows.forEach((row) => {
     const location = parseLocation(row.localizacao);
+    if (!location) {
+      ignoredRows += 1;
+      return;
+    }
+
     const key = location.raw;
     if (!locationMap.has(key)) {
       locationMap.set(key, { ...location, items: [] });
@@ -88,8 +107,17 @@ function groupRows(rows) {
     });
   });
 
-  return [...locationMap.values()].sort(compareLocation);
+  const grouped = [...locationMap.values()].sort(compareLocation);
+  if (!grouped.length) {
+    throw new Error('Nenhuma localização válida encontrada na planilha importada.');
+  }
+  if (ignoredRows > 0) {
+    console.warn(`Linhas ignoradas por localização inválida: ${ignoredRows}`);
+  }
+
+  return grouped;
 }
+
 
 function inferColumns(row) {
   const entries = Object.entries(row);
@@ -119,13 +147,18 @@ function mapRows(rawRows) {
       quantidade: r[cols.colQuantidade]
     }));
 }
-
 function parseCsv(text) {
   const lines = text.split(/\r?\n/).filter(Boolean);
   if (lines.length < 2) throw new Error('CSV sem linhas suficientes.');
-  const headers = lines[0].split(',').map((h) => h.trim());
+
+  const firstLine = lines[0];
+  const commaCount = (firstLine.match(/,/g) || []).length;
+  const semicolonCount = (firstLine.match(/;/g) || []).length;
+  const delimiter = semicolonCount > commaCount ? ';' : ',';
+
+  const headers = lines[0].split(delimiter).map((h) => h.trim());
   return lines.slice(1).map((line) => {
-    const cols = line.split(',');
+    const cols = line.split(delimiter);
     const obj = {};
     headers.forEach((h, i) => {
       obj[h] = cols[i] ?? '';
@@ -133,6 +166,7 @@ function parseCsv(text) {
     return obj;
   });
 }
+
 
 
 function readUInt16LE(bytes, offset) {
