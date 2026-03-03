@@ -1,0 +1,103 @@
+:root {
+  color-scheme: light;
+  font-family: Arial, sans-serif;
+}
+body {
+  margin: 0;
+  background: #f5f6f8;
+}
+.container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 20px;
+}
+.card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 18px;
+  margin-bottom: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+.hidden {
+  display: none;
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+input[type='text'],
+input[type='number'],
+input[type='file'] {
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid #cad0d7;
+}
+.hint {
+  font-size: 0.9rem;
+  color: #666;
+}
+.primary {
+  background: #0b5ed7;
+  color: #fff;
+  border: none;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 1rem;
+  cursor: pointer;
+}
+.location-box {
+  font-size: 2.4rem;
+  font-weight: bold;
+  text-align: center;
+  background: #eef5ff;
+  border: 2px solid #0b5ed7;
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 10px;
+}
+.progress {
+  margin-bottom: 12px;
+  color: #555;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 12px;
+}
+th,
+td {
+  border: 1px solid #e1e4e8;
+  padding: 8px;
+  text-align: left;
+}
+.status-ok {
+  color: #137333;
+  font-weight: bold;
+}
+.status-div {
+  color: #b00020;
+  font-weight: bold;
+}
+.actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.report div {
+  background: #f8f9fb;
+  border-radius: 8px;
+  padding: 10px;
+}
+button {
+  padding: 9px 14px;
+  border-radius: 8px;
+  border: 1px solid #c5cbd3;
+  background: #fff;
+  cursor: pointer;
+}
