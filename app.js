@@ -90,19 +90,25 @@ function inferColumns(row) {
   const find = (names) => entries.find(([k]) => names.includes(normalizeHeader(k)))?.[0];
 
   const colLocalizacao = find(['localizacao', 'localização']);
-  const colSku = find(['sku', 'codigo', 'codigo sku']);
   const colProduto = find(['produto', 'descricao', 'descrição']);
-  const colQuantidade = find(['quantidade', 'qtd', 'qtd esperada', 'quantidade esperada']);
-  const colUnidadeCx = find(['unidade por caixa', 'unidade caixa', 'unidade f', 'unidade', 'und cx']);
+  const colUnidadeCx = find([
+    'unidade por caixa',
+    'unidade p/caixa',
+    'unidade p caixa',
+    'unidade caixa',
+    'unidade f',
+    'unidade',
+    'und cx'
+  ]);
   const colVolume = find(['volume', 'vol']);
   const colValidade = find(['validade', 'vencimento', 'dt validade']);
   const colLote = find(['lote']);
 
-  if (!colLocalizacao || !colSku || !colProduto || !colQuantidade) {
-    throw new Error('Não foi possível identificar as colunas obrigatórias: Localização, SKU, Produto e Quantidade.');
+  if (!colLocalizacao || !colProduto) {
+    throw new Error('Não foi possível identificar as colunas obrigatórias: Localização e Produto.');
   }
 
-  return { colLocalizacao, colSku, colProduto, colQuantidade, colUnidadeCx, colVolume, colValidade, colLote };
+  return { colLocalizacao, colProduto, colUnidadeCx, colVolume, colValidade, colLote };
 }
 
 function mapRows(rawRows) {
@@ -113,9 +119,7 @@ function mapRows(rawRows) {
     .filter((r) => String(r[cols.colLocalizacao] || '').trim())
     .map((r) => ({
       localizacao: r[cols.colLocalizacao],
-      sku: r[cols.colSku],
       produto: r[cols.colProduto],
-      quantidade: r[cols.colQuantidade],
       unidadeCaixa: cols.colUnidadeCx ? r[cols.colUnidadeCx] : '',
       volume: cols.colVolume ? r[cols.colVolume] : '',
       validade: cols.colValidade ? r[cols.colValidade] : '',
@@ -139,9 +143,7 @@ function groupRows(rows) {
       locationMap.set(key, { ...location, items: [] });
     }
     locationMap.get(key).items.push({
-      sku: String(row.sku || '').trim(),
       produto: String(row.produto || '').trim(),
-      qtdEsperada: Number(row.quantidade || 0),
       unidadeCaixa: String(row.unidadeCaixa || '').trim(),
       volume: String(row.volume || '').trim(),
       validade: String(row.validade || '').trim(),
@@ -157,6 +159,7 @@ function groupRows(rows) {
 
 function parseCsv(text) {
   const lines = text.split(/\r?\n/).filter(Boolean);
+
   if (lines.length < 2) throw new Error('CSV sem linhas suficientes.');
   const comma = (lines[0].match(/,/g) || []).length;
   const semi = (lines[0].match(/;/g) || []).length;
@@ -316,7 +319,6 @@ function renderCurrentLocation() {
 
   location.items.forEach((item, idx) => {
     const restored = existing[idx] || {
-      qtdReal: item.qtdEsperada,
       produtoReal: item.produto,
       unidadeCaixaReal: item.unidadeCaixa,
       volumeReal: item.volume,
@@ -327,14 +329,11 @@ function renderCurrentLocation() {
 
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td>${item.sku}</td>
       <td>${item.produto}</td>
       <td>${item.unidadeCaixa}</td>
       <td>${item.volume}</td>
       <td>${item.validade}</td>
       <td>${item.lote}</td>
-      <td>${item.qtdEsperada}</td>
-      <td><input type="number" min="0" step="1" value="${restored.qtdReal}" class="qtd-real"></td>
       <td><input type="text" value="${restored.produtoReal}"></td>
       <td><input type="text" value="${restored.unidadeCaixaReal}"></td>
       <td><input type="text" value="${restored.volumeReal}"></td>
@@ -356,33 +355,30 @@ function normalizeCompare(value) {
 function refreshStatuses() {
   [...el.itemsBody.querySelectorAll('tr')].forEach((tr) => {
     const expected = {
-      produto: tr.children[1].textContent,
-      unidadeCaixa: tr.children[2].textContent,
-      volume: tr.children[3].textContent,
-      validade: tr.children[4].textContent,
-      lote: tr.children[5].textContent,
-      qtd: Number(tr.children[6].textContent)
+      produto: tr.children[0].textContent,
+      unidadeCaixa: tr.children[1].textContent,
+      volume: tr.children[2].textContent,
+      validade: tr.children[3].textContent,
+      lote: tr.children[4].textContent
     };
 
     const real = {
-      qtd: Number(tr.children[7].querySelector('input').value || 0),
-      produto: tr.children[8].querySelector('input').value,
-      unidadeCaixa: tr.children[9].querySelector('input').value,
-      volume: tr.children[10].querySelector('input').value,
-      validade: tr.children[11].querySelector('input').value,
-      lote: tr.children[12].querySelector('input').value,
-      notFound: tr.children[13].querySelector('input').checked
+      produto: tr.children[5].querySelector('input').value,
+      unidadeCaixa: tr.children[6].querySelector('input').value,
+      volume: tr.children[7].querySelector('input').value,
+      validade: tr.children[8].querySelector('input').value,
+      lote: tr.children[9].querySelector('input').value,
+      notFound: tr.children[10].querySelector('input').checked
     };
 
     const ok = !real.notFound
-      && real.qtd === expected.qtd
       && normalizeCompare(real.produto) === normalizeCompare(expected.produto)
       && normalizeCompare(real.unidadeCaixa) === normalizeCompare(expected.unidadeCaixa)
       && normalizeCompare(real.volume) === normalizeCompare(expected.volume)
       && normalizeCompare(real.validade) === normalizeCompare(expected.validade)
       && normalizeCompare(real.lote) === normalizeCompare(expected.lote);
 
-    const status = tr.children[14];
+    const status = tr.children[11];
     status.textContent = ok ? 'Correto' : real.notFound ? 'Não encontrado' : 'Divergente';
     status.className = `status-cell ${ok ? 'status-ok' : 'status-div'}`;
   });
@@ -391,26 +387,23 @@ function refreshStatuses() {
 function captureRows(location) {
   return [...el.itemsBody.querySelectorAll('tr')].map((tr, idx) => {
     const item = location.items[idx];
-    const qtdReal = Number(tr.children[7].querySelector('input').value || 0);
-    const produtoReal = tr.children[8].querySelector('input').value;
-    const unidadeCaixaReal = tr.children[9].querySelector('input').value;
-    const volumeReal = tr.children[10].querySelector('input').value;
-    const validadeReal = tr.children[11].querySelector('input').value;
-    const loteReal = tr.children[12].querySelector('input').value;
-    const notFound = tr.children[13].querySelector('input').checked;
+    const produtoReal = tr.children[5].querySelector('input').value;
+    const unidadeCaixaReal = tr.children[6].querySelector('input').value;
+    const volumeReal = tr.children[7].querySelector('input').value;
+    const validadeReal = tr.children[8].querySelector('input').value;
+    const loteReal = tr.children[9].querySelector('input').value;
+    const notFound = tr.children[10].querySelector('input').checked;
 
-    const status = tr.children[14].textContent;
+    const status = tr.children[11].textContent;
 
     return {
       ...item,
-      qtdReal,
       produtoReal,
       unidadeCaixaReal,
       volumeReal,
       validadeReal,
       loteReal,
       notFound,
-      difference: qtdReal - item.qtdEsperada,
       status
     };
   });
@@ -441,10 +434,6 @@ function buildReportData() {
       if (item.status === 'Correto') return;
       divergences.push({
         localizacao,
-        sku: item.sku,
-        esperado_qtd: item.qtdEsperada,
-        encontrado_qtd: item.qtdReal,
-        diferenca_qtd: item.difference,
         esperado_produto: item.produto,
         encontrado_produto: item.produtoReal,
         esperado_unidade_caixa: item.unidadeCaixa,
@@ -476,7 +465,7 @@ function renderReport() {
   el.divergenceBody.innerHTML = '';
   data.divergences.forEach((d) => {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${d.localizacao}</td><td>${d.sku}</td><td>${d.esperado_qtd}</td><td>${d.encontrado_qtd}</td><td>${d.diferenca_qtd}</td>`;
+    tr.innerHTML = `<td>${d.localizacao}</td><td>${d.esperado_produto}</td><td>${d.encontrado_produto}</td><td>${d.status}</td>`;
     el.divergenceBody.appendChild(tr);
   });
 
@@ -484,7 +473,7 @@ function renderReport() {
 }
 
 function makeCsv(rows) {
-  if (!rows.length) return 'Localização,SKU\n';
+  if (!rows.length) return 'localizacao,esperado_produto,encontrado_produto,status\n';
   const headers = Object.keys(rows[0]);
   const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
   return [headers.join(','), ...rows.map((r) => headers.map((h) => esc(r[h])).join(','))].join('\n');
