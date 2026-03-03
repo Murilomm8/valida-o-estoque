@@ -15,19 +15,9 @@
       <section class="card" id="import-section">
         <h2>1) Importação da planilha</h2>
         <div class="grid">
-          <label>
-            Operador
-            <input id="operator-name" type="text" placeholder="Nome do operador" />
-          </label>
-          <label>
-            Arquivo (.csv / .xlsx)
-            <input id="file-input" type="file" accept=".csv,.xlsx" />
-          </label>
+          <label>Operador <input id="operator-name" type="text" placeholder="Nome do operador" /></label>
+          <label>Arquivo (.csv / .xlsx) <input id="file-input" type="file" accept=".csv,.xlsx" /></label>
         </div>
-        <p class="hint">
-          Colunas esperadas: <strong>Localização</strong>, <strong>SKU</strong>, <strong>Produto</strong>,
-          <strong>Quantidade</strong> (ou similares, sem acentuação também funciona).
-        </p>
         <button id="start-session" class="primary">Iniciar conferência</button>
       </section>
 
@@ -35,19 +25,17 @@
         <h2>2) Conferência guiada</h2>
         <div class="location-box" id="current-location">-</div>
         <div class="progress" id="progress-text"></div>
-        <table>
-          <thead>
-            <tr>
-              <th>SKU</th>
-              <th>Produto</th>
-              <th>Qtd Esperada</th>
-              <th>Qtd Real</th>
-              <th>Não encontrado</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody id="items-body"></tbody>
-        </table>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>SKU</th><th>Produto (Esp.)</th><th>Un/Cx (Esp.)</th><th>Volume (Esp.)</th><th>Validade (Esp.)</th><th>Lote (Esp.)</th>
+                <th>Qtd Esp.</th><th>Qtd Real</th><th>Produto Real</th><th>Un/Cx Real</th><th>Volume Real</th><th>Validade Real</th><th>Lote Real</th><th>Não encontrado</th><th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="items-body"></tbody>
+          </table>
+        </div>
         <div class="actions">
           <button id="confirm-next" class="primary">Confirmar e Próximo (Enter)</button>
         </div>
@@ -58,15 +46,7 @@
         <div id="report-summary" class="grid report"></div>
         <h3>Divergências</h3>
         <table>
-          <thead>
-            <tr>
-              <th>Localização</th>
-              <th>SKU</th>
-              <th>Esperado</th>
-              <th>Encontrado</th>
-              <th>Diferença</th>
-            </tr>
-          </thead>
+          <thead><tr><th>Localização</th><th>SKU</th><th>Esperado</th><th>Encontrado</th><th>Diferença</th></tr></thead>
           <tbody id="divergence-body"></tbody>
         </table>
         <div class="actions">
@@ -74,6 +54,14 @@
           <button id="export-xlsx">Exportar XLSX</button>
           <button id="new-session">Nova sessão</button>
         </div>
+      </section>
+
+      <section class="card hidden" id="history-section">
+        <h2>Histórico de sessões</h2>
+        <table>
+          <thead><tr><th>Finalizada em</th><th>Operador</th><th>Total</th><th>Corretas</th><th>Divergentes</th><th>Exportar</th></tr></thead>
+          <tbody id="history-body"></tbody>
+        </table>
       </section>
     </main>
 

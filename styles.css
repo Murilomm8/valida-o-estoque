@@ -101,3 +101,17 @@ button {
   background: #fff;
   cursor: pointer;
 }
+
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+#items-body input[type='text'],
+#items-body input[type='number'] {
+  min-width: 110px;
+}
+
+#history-section td button {
+  margin-right: 6px;
+}
