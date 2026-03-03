@@ -135,28 +135,199 @@ function parseCsv(text) {
 }
 
 
-function arrayBufferToBase64(buffer) {
-  let binary = '';
-  const bytes = new Uint8Array(buffer);
-  const chunkSize = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
-  }
-  return btoa(binary);
+function readUInt16LE(bytes, offset) {
+  return bytes[offset] | (bytes[offset + 1] << 8);
 }
 
-async function parseXlsxWithLocalApi(file) {
-  const buffer = await file.arrayBuffer();
-  const response = await fetch('/api/parse-xlsx', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ filename: file.name, data: arrayBufferToBase64(buffer) })
-  });
-  const payload = await response.json();
-  if (!response.ok) {
-    throw new Error(payload.error || 'Falha ao processar XLSX localmente.');
+function readUInt32LE(bytes, offset) {
+  return (
+    bytes[offset] |
+    (bytes[offset + 1] << 8) |
+    (bytes[offset + 2] << 16) |
+    (bytes[offset + 3] << 24)
+  ) >>> 0;
+}
+
+async function inflateRaw(data) {
+  if (!window.DecompressionStream) {
+    throw new Error('Navegador sem suporte a descompressão local de XLSX.');
   }
-  return mapRows(payload.rows || []);
+  const ds = new DecompressionStream('deflate-raw');
+  const stream = new Blob([data]).stream().pipeThrough(ds);
+  const out = await new Response(stream).arrayBuffer();
+  return new Uint8Array(out);
+}
+
+async function unzipEntries(buffer) {
+  const bytes = new Uint8Array(buffer);
+  const decoder = new TextDecoder('utf-8');
+
+  let eocdOffset = -1;
+  const min = Math.max(0, bytes.length - 66000);
+  for (let i = bytes.length - 22; i >= min; i -= 1) {
+    if (
+      bytes[i] === 0x50 &&
+      bytes[i + 1] === 0x4b &&
+      bytes[i + 2] === 0x05 &&
+      bytes[i + 3] === 0x06
+    ) {
+      eocdOffset = i;
+      break;
+    }
+  }
+
+  if (eocdOffset < 0) throw new Error('ZIP inválido (EOCD não encontrado).');
+
+  const centralDirectoryOffset = readUInt32LE(bytes, eocdOffset + 16);
+  const totalEntries = readUInt16LE(bytes, eocdOffset + 10);
+
+  const files = new Map();
+  let ptr = centralDirectoryOffset;
+
+  for (let i = 0; i < totalEntries; i += 1) {
+    if (
+      bytes[ptr] !== 0x50 ||
+      bytes[ptr + 1] !== 0x4b ||
+      bytes[ptr + 2] !== 0x01 ||
+      bytes[ptr + 3] !== 0x02
+    ) {
+      throw new Error('ZIP inválido (cabeçalho de diretório central).');
+    }
+
+    const compressionMethod = readUInt16LE(bytes, ptr + 10);
+    const compressedSize = readUInt32LE(bytes, ptr + 20);
+    const fileNameLength = readUInt16LE(bytes, ptr + 28);
+    const extraLength = readUInt16LE(bytes, ptr + 30);
+    const commentLength = readUInt16LE(bytes, ptr + 32);
+    const localHeaderOffset = readUInt32LE(bytes, ptr + 42);
+
+    const fileNameStart = ptr + 46;
+    const fileNameEnd = fileNameStart + fileNameLength;
+    const fileName = decoder.decode(bytes.slice(fileNameStart, fileNameEnd));
+
+    const lh = localHeaderOffset;
+    if (
+      bytes[lh] !== 0x50 ||
+      bytes[lh + 1] !== 0x4b ||
+      bytes[lh + 2] !== 0x03 ||
+      bytes[lh + 3] !== 0x04
+    ) {
+      throw new Error('ZIP inválido (local header).');
+    }
+
+    const localNameLen = readUInt16LE(bytes, lh + 26);
+    const localExtraLen = readUInt16LE(bytes, lh + 28);
+    const dataStart = lh + 30 + localNameLen + localExtraLen;
+    const compressed = bytes.slice(dataStart, dataStart + compressedSize);
+
+    let content;
+    if (compressionMethod === 0) {
+      content = compressed;
+    } else if (compressionMethod === 8) {
+      content = await inflateRaw(compressed);
+    } else {
+      throw new Error(`Método de compressão ZIP não suportado: ${compressionMethod}`);
+    }
+
+    files.set(fileName, content);
+    ptr = fileNameEnd + extraLength + commentLength;
+  }
+
+  return files;
+}
+
+function xmlDocFromBytes(bytes) {
+  const text = new TextDecoder('utf-8').decode(bytes);
+  return new DOMParser().parseFromString(text, 'application/xml');
+}
+
+function getCellText(cell, sharedStrings) {
+  const type = cell.getAttribute('t');
+  if (type === 's') {
+    const v = cell.querySelector('v');
+    if (!v) return '';
+    const idx = Number(v.textContent || 0);
+    return sharedStrings[idx] ?? '';
+  }
+  if (type === 'inlineStr') {
+    return cell.querySelector('is t')?.textContent ?? '';
+  }
+  return cell.querySelector('v')?.textContent ?? '';
+}
+
+function colIndexFromRef(ref) {
+  const col = (ref.match(/[A-Z]+/i)?.[0] || 'A').toUpperCase();
+  let idx = 0;
+  for (let i = 0; i < col.length; i += 1) {
+    idx = idx * 26 + (col.charCodeAt(i) - 64);
+  }
+  return Math.max(0, idx - 1);
+}
+
+function parseSheetRows(sheetDoc, sharedStrings) {
+  const rowNodes = [...sheetDoc.querySelectorAll('sheetData > row')];
+  return rowNodes.map((row) => {
+    const values = {};
+    [...row.querySelectorAll('c')].forEach((cell) => {
+      const ref = cell.getAttribute('r') || 'A1';
+      values[colIndexFromRef(ref)] = getCellText(cell, sharedStrings);
+    });
+    const maxIndex = Math.max(-1, ...Object.keys(values).map(Number));
+    return Array.from({ length: maxIndex + 1 }, (_, i) => values[i] ?? '');
+  });
+}
+
+async function parseXlsxInBrowser(file) {
+  const buffer = await file.arrayBuffer();
+  const files = await unzipEntries(buffer);
+
+  const workbookBytes = files.get('xl/workbook.xml');
+  const relsBytes = files.get('xl/_rels/workbook.xml.rels');
+  if (!workbookBytes || !relsBytes) {
+    throw new Error('Estrutura XLSX inválida.');
+  }
+
+  const sharedBytes = files.get('xl/sharedStrings.xml');
+  const sharedStrings = [];
+  if (sharedBytes) {
+    const sharedDoc = xmlDocFromBytes(sharedBytes);
+    sharedDoc.querySelectorAll('si').forEach((si) => {
+      const text = [...si.querySelectorAll('t')].map((t) => t.textContent || '').join('');
+      sharedStrings.push(text);
+    });
+  }
+
+  const workbookDoc = xmlDocFromBytes(workbookBytes);
+  const firstSheet = workbookDoc.querySelector('sheets > sheet');
+  if (!firstSheet) throw new Error('XLSX sem abas.');
+
+  const relId = firstSheet.getAttribute('r:id');
+  if (!relId) throw new Error('XLSX sem relacionamento da primeira aba.');
+
+  const relsDoc = xmlDocFromBytes(relsBytes);
+  const relNode = [...relsDoc.querySelectorAll('Relationship')].find((r) => r.getAttribute('Id') === relId);
+  if (!relNode) throw new Error('Relacionamento da aba não encontrado.');
+
+  const target = relNode.getAttribute('Target') || '';
+  const normalizedTarget = target.replace(/^\/+/, '');
+  const sheetPath = normalizedTarget.startsWith('worksheets/') ? `xl/${normalizedTarget}` : `xl/worksheets/${normalizedTarget.split('/').pop()}`;
+  const sheetBytes = files.get(sheetPath);
+  if (!sheetBytes) throw new Error('Arquivo da primeira aba não encontrado.');
+
+  const sheetDoc = xmlDocFromBytes(sheetBytes);
+  const rows = parseSheetRows(sheetDoc, sharedStrings).filter((r) => r.length > 0);
+  if (rows.length < 2) throw new Error('Planilha XLSX sem dados suficientes.');
+
+  const headers = rows[0].map((h, i) => String(h || '').trim() || `COL_${i + 1}`);
+  const jsonRows = rows.slice(1).map((row) => {
+    const obj = {};
+    headers.forEach((header, i) => {
+      obj[header] = row[i] ?? '';
+    });
+    return obj;
+  });
+
+  return mapRows(jsonRows);
 }
 
 function openConference() {
@@ -330,9 +501,9 @@ async function importFile(file) {
     }
 
     try {
-      return await parseXlsxWithLocalApi(file);
-    } catch (apiError) {
-      throw new Error('Não foi possível importar XLSX no navegador. Rode `python3 server.py` para habilitar o parser local, ou use CSV.');
+      return await parseXlsxInBrowser(file);
+    } catch (xlsxError) {
+      throw new Error(`Falha ao importar XLSX neste navegador: ${xlsxError.message}`);
     }
   }
   throw new Error('Formato não suportado. Use CSV ou XLSX.');
