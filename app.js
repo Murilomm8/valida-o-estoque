@@ -134,6 +134,31 @@ function parseCsv(text) {
   });
 }
 
+
+function arrayBufferToBase64(buffer) {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+async function parseXlsxWithLocalApi(file) {
+  const buffer = await file.arrayBuffer();
+  const response = await fetch('/api/parse-xlsx', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filename: file.name, data: arrayBufferToBase64(buffer) })
+  });
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.error || 'Falha ao processar XLSX localmente.');
+  }
+  return mapRows(payload.rows || []);
+}
+
 function openConference() {
   el.importSection.classList.add('hidden');
   el.reportSection.classList.add('hidden');
@@ -296,14 +321,19 @@ async function importFile(file) {
     return mapRows(parseCsv(text));
   }
   if (ext === 'xlsx') {
-    if (!window.XLSX) {
-      throw new Error('Importação XLSX indisponível sem biblioteca XLSX local.');
+    if (window.XLSX) {
+      const buffer = await file.arrayBuffer();
+      const wb = XLSX.read(buffer, { type: 'array' });
+      const firstSheet = wb.SheetNames[0];
+      const rawRows = XLSX.utils.sheet_to_json(wb.Sheets[firstSheet], { defval: '' });
+      return mapRows(rawRows);
     }
-    const buffer = await file.arrayBuffer();
-    const wb = XLSX.read(buffer, { type: 'array' });
-    const firstSheet = wb.SheetNames[0];
-    const rawRows = XLSX.utils.sheet_to_json(wb.Sheets[firstSheet], { defval: '' });
-    return mapRows(rawRows);
+
+    try {
+      return await parseXlsxWithLocalApi(file);
+    } catch (apiError) {
+      throw new Error('Não foi possível importar XLSX no navegador. Rode `python3 server.py` para habilitar o parser local, ou use CSV.');
+    }
   }
   throw new Error('Formato não suportado. Use CSV ou XLSX.');
 }
