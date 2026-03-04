@@ -490,42 +490,84 @@ function crc32(bytes) {
   return (~crc) >>> 0;
 }
 
-function u16(n) { return [n & 255, (n >> 8) & 255]; }
-function u32(n) { return [n & 255, (n >> 8) & 255, (n >> 16) & 255, (n >> 24) & 255]; }
+function concatUint8(parts) {
+  const total = parts.reduce((sum, arr) => sum + arr.length, 0);
+  const out = new Uint8Array(total);
+  let offset = 0;
+  parts.forEach((arr) => {
+    out.set(arr, offset);
+    offset += arr.length;
+  });
+  return out;
+}
 
 function zipStore(files) {
   const enc = new TextEncoder();
+  const localParts = [];
+  const centralParts = [];
   let offset = 0;
-  const locals = [];
-  const centrals = [];
 
-  files.forEach((f) => {
-    const name = enc.encode(f.name);
-    const data = typeof f.data === 'string' ? enc.encode(f.data) : f.data;
-    const crc = crc32(data);
+  files.forEach((file) => {
+    const nameBytes = enc.encode(file.name);
+    const dataBytes = typeof file.data === 'string' ? enc.encode(file.data) : file.data;
+    const crc = crc32(dataBytes);
 
-    const local = new Uint8Array([
-      80, 75, 3, 4, 20, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-      ...u32(crc), ...u32(data.length), ...u32(data.length), ...u16(name.length), 0, 0,
-      ...name, ...data
-    ]);
+    const localHeader = new Uint8Array(30);
+    const localView = new DataView(localHeader.buffer);
+    localView.setUint32(0, 0x04034b50, true);
+    localView.setUint16(4, 20, true);
+    localView.setUint16(6, 0, true);
+    localView.setUint16(8, 0, true);
+    localView.setUint16(10, 0, true);
+    localView.setUint16(12, 0, true);
+    localView.setUint32(14, crc, true);
+    localView.setUint32(18, dataBytes.length, true);
+    localView.setUint32(22, dataBytes.length, true);
+    localView.setUint16(26, nameBytes.length, true);
+    localView.setUint16(28, 0, true);
 
-    const central = new Uint8Array([
-      80, 75, 1, 2, 20, 0, 20, 0, 0, 0, 0, 0, 0, 0,
-      ...u32(crc), ...u32(data.length), ...u32(data.length), ...u16(name.length), 0, 0, 0, 0, 0, 0, 0, 0,
-      ...u32(offset), ...name
-    ]);
+    const localPart = concatUint8([localHeader, nameBytes, dataBytes]);
+    localParts.push(localPart);
 
-    locals.push(local);
-    centrals.push(central);
-    offset += local.length;
+    const centralHeader = new Uint8Array(46);
+    const centralView = new DataView(centralHeader.buffer);
+    centralView.setUint32(0, 0x02014b50, true);
+    centralView.setUint16(4, 20, true);
+    centralView.setUint16(6, 20, true);
+    centralView.setUint16(8, 0, true);
+    centralView.setUint16(10, 0, true);
+    centralView.setUint16(12, 0, true);
+    centralView.setUint16(14, 0, true);
+    centralView.setUint32(16, crc, true);
+    centralView.setUint32(20, dataBytes.length, true);
+    centralView.setUint32(24, dataBytes.length, true);
+    centralView.setUint16(28, nameBytes.length, true);
+    centralView.setUint16(30, 0, true);
+    centralView.setUint16(32, 0, true);
+    centralView.setUint16(34, 0, true);
+    centralView.setUint16(36, 0, true);
+    centralView.setUint32(38, 0, true);
+    centralView.setUint32(42, offset, true);
+
+    centralParts.push(concatUint8([centralHeader, nameBytes]));
+    offset += localPart.length;
   });
 
-  const centralSize = centrals.reduce((s, c) => s + c.length, 0);
-  const centralOffset = locals.reduce((s, l) => s + l.length, 0);
-  const eocd = new Uint8Array([80, 75, 5, 6, 0, 0, 0, 0, ...u16(files.length), ...u16(files.length), ...u32(centralSize), ...u32(centralOffset), 0, 0]);
+  const centralDir = concatUint8(centralParts);
+  const localDir = concatUint8(localParts);
 
-  return new Blob([...locals, ...centrals, eocd], { type: 'application/zip' });
+  const eocd = new Uint8Array(22);
+  const eocdView = new DataView(eocd.buffer);
+  eocdView.setUint32(0, 0x06054b50, true);
+  eocdView.setUint16(4, 0, true);
+  eocdView.setUint16(6, 0, true);
+  eocdView.setUint16(8, files.length, true);
+  eocdView.setUint16(10, files.length, true);
+  eocdView.setUint32(12, centralDir.length, true);
+  eocdView.setUint32(16, localDir.length, true);
+  eocdView.setUint16(20, 0, true);
+
+  return new Blob([localDir, centralDir, eocd], { type: 'application/zip' });
 }
 
 function rowsToXlsxBlob(rows) {
@@ -543,11 +585,19 @@ function rowsToXlsxBlob(rows) {
   const files = [
     {
       name: '[Content_Types].xml',
-      data: `<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>`
+      data: `<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`
     },
     {
       name: '_rels/.rels',
-      data: `<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`
+      data: `<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>`
+    },
+    {
+      name: 'docProps/app.xml',
+      data: `<?xml version="1.0" encoding="UTF-8"?><Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><Application>Valida Estoque</Application></Properties>`
+    },
+    {
+      name: 'docProps/core.xml',
+      data: `<?xml version="1.0" encoding="UTF-8"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>Relatório Divergências</dc:title><dc:creator>Valida Estoque</dc:creator><cp:lastModifiedBy>Valida Estoque</cp:lastModifiedBy></cp:coreProperties>`
     },
     {
       name: 'xl/workbook.xml',
@@ -555,7 +605,11 @@ function rowsToXlsxBlob(rows) {
     },
     {
       name: 'xl/_rels/workbook.xml.rels',
-      data: `<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>`
+      data: `<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`
+    },
+    {
+      name: 'xl/styles.xml',
+      data: `<?xml version="1.0" encoding="UTF-8"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts><fills count="1"><fill><patternFill patternType="none"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="1"><xf xfId="0"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`
     },
     {
       name: 'xl/worksheets/sheet1.xml',
