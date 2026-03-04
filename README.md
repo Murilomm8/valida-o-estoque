@@ -16,7 +16,7 @@ Aplicação web local (offline) para conferência guiada de estoque por localiza
 - Limpeza de localização (`*`, espaços extras, barra inicial e padronização em maiúsculas).
 - Parsing no formato `LONGARINA ALTURA.POSIÇÃO`.
 - Ordenação lógica por `longarina`, `altura`, `posição`.
-- Conferência de: produto, unidade por caixa, volume, validade e lote.
+- Conferência de: produto, unidade por caixa, volume e validade.
 - Sessão com operador, horário de início, progresso e timestamps por localização.
 - Persistência no `localStorage` e histórico local de sessões.
 - Linhas sem localização válida (ex.: títulos como "Expedição") são ignoradas automaticamente.
@@ -24,7 +24,7 @@ Aplicação web local (offline) para conferência guiada de estoque por localiza
 ## Colunas aceitas na importação
 
 - Obrigatórias: `Localização`, `Produto`
-- Opcionais: `Unidade por caixa` (ou `Unidade P/caixa` / `Unidade F`), `Volume`, `Validade`, `Lote`
+- Opcionais: `Unidade por caixa` (ou `Unidade P/caixa` / `Unidade F`), `Volume`, `Validade`
 
 ## Observações
 

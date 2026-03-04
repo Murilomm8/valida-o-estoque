@@ -34,7 +34,10 @@ function normalizeHeader(value) {
     .trim()
     .toLowerCase()
     .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '');
+    .replace(/\p{Diacritic}/gu, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function parseLocation(rawValue) {
@@ -93,22 +96,23 @@ function inferColumns(row) {
   const colProduto = find(['produto', 'descricao', 'descrição']);
   const colUnidadeCx = find([
     'unidade por caixa',
-    'unidade p/caixa',
     'unidade p caixa',
     'unidade caixa',
     'unidade f',
+    'und cx',
+    'un cx',
+    'unidade cx',
     'unidade',
-    'und cx'
+    'un'
   ]);
   const colVolume = find(['volume', 'vol']);
   const colValidade = find(['validade', 'vencimento', 'dt validade']);
-  const colLote = find(['lote']);
 
   if (!colLocalizacao || !colProduto) {
     throw new Error('Não foi possível identificar as colunas obrigatórias: Localização e Produto.');
   }
 
-  return { colLocalizacao, colProduto, colUnidadeCx, colVolume, colValidade, colLote };
+  return { colLocalizacao, colProduto, colUnidadeCx, colVolume, colValidade };
 }
 
 function mapRows(rawRows) {
@@ -122,8 +126,7 @@ function mapRows(rawRows) {
       produto: r[cols.colProduto],
       unidadeCaixa: cols.colUnidadeCx ? r[cols.colUnidadeCx] : '',
       volume: cols.colVolume ? r[cols.colVolume] : '',
-      validade: cols.colValidade ? r[cols.colValidade] : '',
-      lote: cols.colLote ? r[cols.colLote] : ''
+      validade: cols.colValidade ? r[cols.colValidade] : ''
     }));
 }
 
@@ -146,8 +149,7 @@ function groupRows(rows) {
       produto: String(row.produto || '').trim(),
       unidadeCaixa: String(row.unidadeCaixa || '').trim(),
       volume: String(row.volume || '').trim(),
-      validade: String(row.validade || '').trim(),
-      lote: String(row.lote || '').trim()
+      validade: String(row.validade || '').trim()
     });
   });
 
@@ -323,7 +325,6 @@ function renderCurrentLocation() {
       unidadeCaixaReal: item.unidadeCaixa,
       volumeReal: item.volume,
       validadeReal: item.validade,
-      loteReal: item.lote,
       notFound: false
     };
 
@@ -333,12 +334,10 @@ function renderCurrentLocation() {
       <td>${item.unidadeCaixa}</td>
       <td>${item.volume}</td>
       <td>${item.validade}</td>
-      <td>${item.lote}</td>
       <td><input type="text" value="${restored.produtoReal}"></td>
       <td><input type="text" value="${restored.unidadeCaixaReal}"></td>
       <td><input type="text" value="${restored.volumeReal}"></td>
       <td><input type="text" value="${restored.validadeReal}"></td>
-      <td><input type="text" value="${restored.loteReal}"></td>
       <td><input type="checkbox" ${restored.notFound ? 'checked' : ''} class="not-found"></td>
       <td class="status-cell"></td>
     `;
@@ -359,16 +358,14 @@ function refreshStatuses() {
       unidadeCaixa: tr.children[1].textContent,
       volume: tr.children[2].textContent,
       validade: tr.children[3].textContent,
-      lote: tr.children[4].textContent
     };
 
     const real = {
-      produto: tr.children[5].querySelector('input').value,
-      unidadeCaixa: tr.children[6].querySelector('input').value,
-      volume: tr.children[7].querySelector('input').value,
-      validade: tr.children[8].querySelector('input').value,
-      lote: tr.children[9].querySelector('input').value,
-      notFound: tr.children[10].querySelector('input').checked
+      produto: tr.children[4].querySelector('input').value,
+      unidadeCaixa: tr.children[5].querySelector('input').value,
+      volume: tr.children[6].querySelector('input').value,
+      validade: tr.children[7].querySelector('input').value,
+      notFound: tr.children[8].querySelector('input').checked
     };
 
     const ok = !real.notFound
@@ -376,9 +373,9 @@ function refreshStatuses() {
       && normalizeCompare(real.unidadeCaixa) === normalizeCompare(expected.unidadeCaixa)
       && normalizeCompare(real.volume) === normalizeCompare(expected.volume)
       && normalizeCompare(real.validade) === normalizeCompare(expected.validade)
-      && normalizeCompare(real.lote) === normalizeCompare(expected.lote);
+      ;
 
-    const status = tr.children[11];
+    const status = tr.children[9];
     status.textContent = ok ? 'Correto' : real.notFound ? 'Não encontrado' : 'Divergente';
     status.className = `status-cell ${ok ? 'status-ok' : 'status-div'}`;
   });
@@ -387,14 +384,13 @@ function refreshStatuses() {
 function captureRows(location) {
   return [...el.itemsBody.querySelectorAll('tr')].map((tr, idx) => {
     const item = location.items[idx];
-    const produtoReal = tr.children[5].querySelector('input').value;
-    const unidadeCaixaReal = tr.children[6].querySelector('input').value;
-    const volumeReal = tr.children[7].querySelector('input').value;
-    const validadeReal = tr.children[8].querySelector('input').value;
-    const loteReal = tr.children[9].querySelector('input').value;
-    const notFound = tr.children[10].querySelector('input').checked;
+    const produtoReal = tr.children[4].querySelector('input').value;
+    const unidadeCaixaReal = tr.children[5].querySelector('input').value;
+    const volumeReal = tr.children[6].querySelector('input').value;
+    const validadeReal = tr.children[7].querySelector('input').value;
+    const notFound = tr.children[8].querySelector('input').checked;
 
-    const status = tr.children[11].textContent;
+    const status = tr.children[9].textContent;
 
     return {
       ...item,
@@ -402,7 +398,6 @@ function captureRows(location) {
       unidadeCaixaReal,
       volumeReal,
       validadeReal,
-      loteReal,
       notFound,
       status
     };
@@ -442,8 +437,6 @@ function buildReportData() {
         encontrado_volume: item.volumeReal,
         esperado_validade: item.validade,
         encontrado_validade: item.validadeReal,
-        esperado_lote: item.lote,
-        encontrado_lote: item.loteReal,
         status: item.status
       });
     });
